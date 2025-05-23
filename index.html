@@ -20,16 +20,25 @@
             color: #2c3e50;
         }
 
-        .video-container {
+        .video-wrapper {
             width: 100%;
             margin: 20px 0;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .video-container {
+            width: 100%;
             background-color: #000;
             position: relative;
+            margin: 0 auto;
+            transition: max-width 0.3s ease;
         }
 
         video {
             width: 100%;
             display: block;
+            transition: transform 0.3s ease;
         }
 
         .controls {
@@ -37,6 +46,7 @@
             justify-content: center;
             margin: 20px 0;
             gap: 10px;
+            flex-wrap: wrap;
         }
 
         button {
@@ -108,6 +118,61 @@
         #select-dir-btn:hover {
             background-color: #27ae60;
         }
+
+        .rotate-controls {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .rotate-btn {
+            background-color: #9b59b6;
+        }
+
+        .rotate-btn:hover {
+            background-color: #8e44ad;
+        }
+
+        #reset-rotate-btn {
+            background-color: #e74c3c;
+        }
+
+        #reset-rotate-btn:hover {
+            background-color: #c0392b;
+        }
+
+        #fullscreen-btn {
+            background-color: #f39c12;
+        }
+
+        #fullscreen-btn:hover {
+            background-color: #d35400;
+        }
+
+        /* 全屏样式 */
+        :fullscreen .video-container {
+            max-width: 100% !important;
+            width: 100% !important;
+            height: 100% !important;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        :fullscreen video {
+            max-width: 100%;
+            max-height: 100%;
+            width: auto !important;
+            height: auto !important;
+        }
+
+        /* 旋转后的全屏适配 */
+        :fullscreen .rotated-90 video,
+        :fullscreen .rotated-270 video {
+            max-width: 100vh;
+            max-height: 100vw;
+        }
     </style>
 </head>
 
@@ -126,14 +191,22 @@
     <div id="loading" class="loading" style="display: none;">正在扫描视频文件，请稍候...</div>
 
     <div id="player" style="display: none;">
-        <div class="video-container">
-            <video id="videoPlayer" controls></video>
+        <div class="video-wrapper">
+            <div class="video-container" id="video-container">
+                <video id="videoPlayer" controls></video>
+            </div>
         </div>
         <div class="file-info" id="file-info"></div>
         <div class="controls">
             <button id="prev-btn">上一个</button>
             <button id="random-btn">随机播放</button>
             <button id="next-btn">下一个</button>
+            <button id="fullscreen-btn">全屏</button>
+        </div>
+        <div class="rotate-controls">
+            <button id="rotate-left-btn" class="rotate-btn">向左旋转</button>
+            <button id="rotate-right-btn" class="rotate-btn">向右旋转</button>
+            <button id="reset-rotate-btn">重置旋转</button>
         </div>
     </div>
 
@@ -141,13 +214,16 @@
         // 存储所有找到的视频文件
         let videoFiles = [];
         let currentIndex = -1;
+        let currentRotation = 0; // 当前旋转角度（0, 90, 180, 270）
 
         // DOM元素
         const videoPlayer = document.getElementById('videoPlayer');
+        const videoContainer = document.getElementById('video-container');
         const fileInfo = document.getElementById('file-info');
         const prevBtn = document.getElementById('prev-btn');
         const nextBtn = document.getElementById('next-btn');
         const randomBtn = document.getElementById('random-btn');
+        const fullscreenBtn = document.getElementById('fullscreen-btn');
         const loadingDiv = document.getElementById('loading');
         const playerDiv = document.getElementById('player');
         const statusDiv = document.getElementById('status');
@@ -155,6 +231,10 @@
         const scanProgressContainer = document.getElementById('scan-progress-container');
         const selectDirBtn = document.getElementById('select-dir-btn');
         const startContainer = document.getElementById('start-container');
+        const rotateLeftBtn = document.getElementById('rotate-left-btn');
+        const rotateRightBtn = document.getElementById('rotate-right-btn');
+        const resetRotateBtn = document.getElementById('reset-rotate-btn');
+        const videoWrapper = document.querySelector('.video-wrapper');
 
         // 扫描目录中的视频文件
         async function scanForVideos() {
@@ -260,6 +340,10 @@
                 const file = await videoFile.handle.getFile();
                 const url = URL.createObjectURL(file);
 
+                // 重置旋转状态
+                currentRotation = 0;
+                updateVideoRotation();
+
                 videoPlayer.src = url;
                 fileInfo.textContent = `${videoFile.path} (${formatFileSize(file.size)})`;
 
@@ -292,6 +376,55 @@
             }
         }
 
+        // 向左旋转视频
+        function rotateLeft() {
+            currentRotation = (currentRotation - 90 + 360) % 360;
+            updateVideoRotation();
+        }
+
+        // 向右旋转视频
+        function rotateRight() {
+            currentRotation = (currentRotation + 90) % 360;
+            updateVideoRotation();
+        }
+
+        // 重置旋转
+        function resetRotation() {
+            currentRotation = 0;
+            updateVideoRotation();
+        }
+
+        // 更新视频旋转状态
+        function updateVideoRotation() {
+            // 移除之前的旋转类
+            videoContainer.classList.remove('rotated-90', 'rotated-180', 'rotated-270');
+
+            // 应用新的旋转
+            videoPlayer.style.transform = `rotate(${currentRotation}deg)`;
+
+            // 根据旋转角度调整容器
+            if (currentRotation % 180 === 90) {
+                // 90或270度旋转，需要交换宽高比例
+                const videoRatio = videoPlayer.videoHeight / videoPlayer.videoWidth;
+                videoContainer.style.maxWidth = `${100 * videoRatio}%`;
+                videoContainer.classList.add(`rotated-${currentRotation}`);
+            } else {
+                // 0或180度旋转，正常宽高
+                videoContainer.style.maxWidth = '100%';
+            }
+        }
+
+        // 切换全屏
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                videoWrapper.requestFullscreen().catch(err => {
+                    console.error(`全屏错误: ${err.message}`);
+                });
+            } else {
+                document.exitFullscreen();
+            }
+        }
+
         // 格式化文件大小
         function formatFileSize(bytes) {
             if (bytes === 0) return '0 Bytes';
@@ -306,6 +439,24 @@
         nextBtn.addEventListener('click', playNextVideo);
         randomBtn.addEventListener('click', playRandomVideo);
         selectDirBtn.addEventListener('click', scanForVideos);
+        rotateLeftBtn.addEventListener('click', rotateLeft);
+        rotateRightBtn.addEventListener('click', rotateRight);
+        resetRotateBtn.addEventListener('click', resetRotation);
+        fullscreenBtn.addEventListener('click', toggleFullscreen);
+
+        // 视频加载后更新旋转状态
+        videoPlayer.addEventListener('loadedmetadata', function () {
+            updateVideoRotation();
+        });
+
+        // 全屏变化事件
+        document.addEventListener('fullscreenchange', function () {
+            if (document.fullscreenElement) {
+                fullscreenBtn.textContent = '退出全屏';
+            } else {
+                fullscreenBtn.textContent = '全屏';
+            }
+        });
     </script>
 </body>
 
