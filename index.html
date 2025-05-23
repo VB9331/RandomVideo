@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>随机视频播放器</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+        }
+
+        .video-container {
+            width: 100%;
+            margin: 20px 0;
+            background-color: #000;
+            position: relative;
+        }
+
+        video {
+            width: 100%;
+            display: block;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            margin: 20px 0;
+            gap: 10px;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #2980b9;
+        }
+
+        button:disabled {
+            background-color: #95a5a6;
+            cursor: not-allowed;
+        }
+
+        .file-info {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #7f8c8d;
+            text-align: center;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #7f8c8d;
+        }
+
+        .progress-container {
+            width: 100%;
+            background-color: #ddd;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+
+        .progress-bar {
+            height: 10px;
+            background-color: #3498db;
+            border-radius: 4px;
+            width: 0%;
+            transition: width 0.3s;
+        }
+
+        .status {
+            text-align: center;
+            margin: 10px 0;
+            font-size: 14px;
+            color: #7f8c8d;
+        }
+
+        .start-container {
+            text-align: center;
+            margin: 40px 0;
+        }
+
+        #select-dir-btn {
+            padding: 15px 30px;
+            font-size: 18px;
+            background-color: #2ecc71;
+        }
+
+        #select-dir-btn:hover {
+            background-color: #27ae60;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>随机视频播放器</h1>
+
+    <div class="start-container" id="start-container">
+        <button id="select-dir-btn">选择视频目录</button>
+    </div>
+
+    <div class="progress-container" id="scan-progress-container" style="display: none;">
+        <div class="progress-bar" id="scan-progress-bar"></div>
+    </div>
+    <div class="status" id="status">请选择包含视频的目录</div>
+
+    <div id="loading" class="loading" style="display: none;">正在扫描视频文件，请稍候...</div>
+
+    <div id="player" style="display: none;">
+        <div class="video-container">
+            <video id="videoPlayer" controls></video>
+        </div>
+        <div class="file-info" id="file-info"></div>
+        <div class="controls">
+            <button id="prev-btn">上一个</button>
+            <button id="random-btn">随机播放</button>
+            <button id="next-btn">下一个</button>
+        </div>
+    </div>
+
+    <script>
+        // 存储所有找到的视频文件
+        let videoFiles = [];
+        let currentIndex = -1;
+
+        // DOM元素
+        const videoPlayer = document.getElementById('videoPlayer');
+        const fileInfo = document.getElementById('file-info');
+        const prevBtn = document.getElementById('prev-btn');
+        const nextBtn = document.getElementById('next-btn');
+        const randomBtn = document.getElementById('random-btn');
+        const loadingDiv = document.getElementById('loading');
+        const playerDiv = document.getElementById('player');
+        const statusDiv = document.getElementById('status');
+        const scanProgressBar = document.getElementById('scan-progress-bar');
+        const scanProgressContainer = document.getElementById('scan-progress-container');
+        const selectDirBtn = document.getElementById('select-dir-btn');
+        const startContainer = document.getElementById('start-container');
+
+        // 扫描目录中的视频文件
+        async function scanForVideos() {
+            try {
+                // 显示加载状态
+                startContainer.style.display = 'none';
+                loadingDiv.style.display = 'block';
+                scanProgressContainer.style.display = 'block';
+                statusDiv.textContent = '正在扫描视频文件...';
+
+                // 使用文件系统访问API（需要用户授权）
+                const dirHandle = await window.showDirectoryPicker();
+                videoFiles = await getAllVideoFiles(dirHandle);
+
+                if (videoFiles.length === 0) {
+                    statusDiv.textContent = '没有找到.mp4视频文件';
+                    loadingDiv.textContent = '没有找到.mp4视频文件';
+                    startContainer.style.display = 'block';
+                    return;
+                }
+
+                statusDiv.textContent = `找到 ${videoFiles.length} 个视频文件`;
+                loadingDiv.style.display = 'none';
+                playerDiv.style.display = 'block';
+
+                // 随机播放第一个视频
+                playRandomVideo();
+
+            } catch (error) {
+                console.error('扫描视频文件时出错:', error);
+                statusDiv.textContent = '扫描视频文件时出错: ' + error.message;
+                loadingDiv.textContent = '扫描视频文件时出错: ' + error.message;
+                startContainer.style.display = 'block';
+            }
+        }
+
+        // 递归获取所有视频文件
+        async function getAllVideoFiles(dirHandle, path = '', progressCallback) {
+            const files = [];
+            let processedEntries = 0;
+
+            // 获取目录迭代器
+            const iter = dirHandle.entries();
+
+            // 先收集所有条目，以便计算总数
+            const entries = [];
+            for await (const entry of iter) {
+                entries.push(entry);
+            }
+
+            const totalEntries = entries.length;
+
+            // 处理每个条目
+            for (let i = 0; i < entries.length; i++) {
+                const [name, handle] = entries[i];
+                const fullPath = path ? `${path}/${name}` : name;
+
+                if (handle.kind === 'file') {
+                    if (name.toLowerCase().endsWith('.mp4')) {
+                        files.push({
+                            name: name,
+                            path: fullPath,
+                            handle: handle
+                        });
+                    }
+                    processedEntries++;
+                } else if (handle.kind === 'directory') {
+                    const subFiles = await getAllVideoFiles(handle, fullPath);
+                    files.push(...subFiles);
+                    processedEntries++;
+                }
+
+                // 更新进度
+                const progress = Math.floor((processedEntries / totalEntries) * 100);
+                scanProgressBar.style.width = `${progress}%`;
+                statusDiv.textContent = `正在扫描视频文件... (${progress}%)`;
+            }
+
+            return files;
+        }
+
+        // 播放随机视频
+        function playRandomVideo() {
+            if (videoFiles.length === 0) return;
+
+            let newIndex;
+            do {
+                newIndex = Math.floor(Math.random() * videoFiles.length);
+            } while (newIndex === currentIndex && videoFiles.length > 1);
+
+            currentIndex = newIndex;
+            playVideo(currentIndex);
+        }
+
+        // 播放指定索引的视频
+        async function playVideo(index) {
+            if (index < 0 || index >= videoFiles.length) return;
+
+            const videoFile = videoFiles[index];
+            currentIndex = index;
+
+            try {
+                const file = await videoFile.handle.getFile();
+                const url = URL.createObjectURL(file);
+
+                videoPlayer.src = url;
+                fileInfo.textContent = `${videoFile.path} (${formatFileSize(file.size)})`;
+
+                // 更新按钮状态
+                prevBtn.disabled = currentIndex === 0;
+                nextBtn.disabled = currentIndex === videoFiles.length - 1;
+
+                // 播放视频
+                videoPlayer.play().catch(e => {
+                    console.error('自动播放失败:', e);
+                });
+
+            } catch (error) {
+                console.error('播放视频时出错:', error);
+                fileInfo.textContent = `播放视频时出错: ${error.message}`;
+            }
+        }
+
+        // 播放上一个视频
+        function playPreviousVideo() {
+            if (currentIndex > 0) {
+                playVideo(currentIndex - 1);
+            }
+        }
+
+        // 播放下一个视频
+        function playNextVideo() {
+            if (currentIndex < videoFiles.length - 1) {
+                playVideo(currentIndex + 1);
+            }
+        }
+
+        // 格式化文件大小
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // 事件监听
+        prevBtn.addEventListener('click', playPreviousVideo);
+        nextBtn.addEventListener('click', playNextVideo);
+        randomBtn.addEventListener('click', playRandomVideo);
+        selectDirBtn.addEventListener('click', scanForVideos);
+    </script>
+</body>
+
+</html>
